@@ -11,6 +11,10 @@
     {
       "name": "EntryAbility_label",
       "value": "kuiklydemo"
+    },
+    {
+      "name": "permission_read_imagevideo",
+      "value": "Access photos and videos to browse album"
     }
   ]
 }

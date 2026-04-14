@@ -6,7 +6,7 @@ import {
 import { KRMyView } from './components/KRMyView';
 import { KRBridgeModule } from './modules/KRBridgeModule';
 import { KRMyModule } from './modules/KRMyModule';
-import { KRAlbumModule } from 'KuiklyAlbumOhos';
+import { KRAlbumModule } from '@yuki8273/kuikly-album';
 
 export class KuiklyViewDelegate extends IKuiklyViewDelegate {
   getCustomRenderViewCreatorRegisterMap(): Map<string, KRRenderViewExportCreator> {

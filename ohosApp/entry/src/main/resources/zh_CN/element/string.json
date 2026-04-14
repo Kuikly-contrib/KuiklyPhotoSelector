@@ -11,6 +11,10 @@
     {
       "name": "EntryAbility_label",
       "value": "kuiklydemo"
+    },
+    {
+      "name": "permission_read_imagevideo",
+      "value": "访问照片和视频以浏览相册"
     }
   ]
 }

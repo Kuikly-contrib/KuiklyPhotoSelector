@@ -1,9 +1,13 @@
 package com.tencent.kuiklybase.album
 
+import com.tencent.kuikly.core.base.Animation
 import com.tencent.kuikly.core.base.Border
 import com.tencent.kuikly.core.base.BorderStyle
 import com.tencent.kuikly.core.base.Color
+import com.tencent.kuikly.core.base.Rotate
+import com.tencent.kuikly.core.base.Scale
 import com.tencent.kuikly.core.base.ViewBuilder
+import com.tencent.kuikly.core.base.ViewRef
 import com.tencent.kuikly.core.directives.vif
 import com.tencent.kuikly.core.pager.Pager
 import com.tencent.kuikly.core.reactive.handler.observable
@@ -22,6 +26,7 @@ class KRAlbumPreview(private val pager: Pager) {
     private var onSelectionChanged: ((Set<String>) -> Unit)? = null
     private var imageLoading by observable(true)
     private var opening = false
+    private lateinit var containerRef: ViewRef<DivView>
 
     fun open(
         images: List<KRAlbumImage>,
@@ -34,7 +39,7 @@ class KRAlbumPreview(private val pager: Pager) {
         if (opening || visible) return
         opening = true
 
-        val image = images.getOrNull(index) ?: return
+        val image = images.getOrNull(index) ?: run { opening = false; return }
         this.imageUrl = image.uri
         this.imageId = image.id
         this.selectedIds = selectedIds
@@ -47,8 +52,23 @@ class KRAlbumPreview(private val pager: Pager) {
     }
 
     fun close() {
-        visible = false
-        opening = false
+        if (!visible) return
+        if (::containerRef.isInitialized) {
+            containerRef.view?.animateToAttr(
+                Animation.easeOut(0.2f),
+                completion = { _ ->
+                    visible = false
+                    opening = false
+                },
+                attrBlock = {
+                    opacity(0f)
+                    transform(scale = Scale(0.85f, 0.85f))
+                }
+            )
+        } else {
+            visible = false
+            opening = false
+        }
     }
 
     fun buildPreview(): ViewBuilder {
@@ -62,7 +82,6 @@ class KRAlbumPreview(private val pager: Pager) {
                 Modal(true) {
                     attr {
                         absolutePosition(0f, 0f, 0f, 0f)
-                        backgroundColor(Color.BLACK)
                     }
                     event {
                         willDismiss {
@@ -71,80 +90,117 @@ class KRAlbumPreview(private val pager: Pager) {
                     }
 
                     View {
+                        ref {
+                            preview.containerRef = it
+                            it.view?.animateToAttr(
+                                Animation.easeOut(0.2f),
+                                attrBlock = {
+                                    opacity(1f)
+                                    transform(scale = Scale(1f, 1f))
+                                }
+                            )
+                        }
                         attr {
-                            flex(1f)
-                            justifyContentCenter()
-                            alignItemsCenter()
+                            absolutePosition(0f, 0f, 0f, 0f)
+                            backgroundColor(Color.BLACK)
+                            opacity(0f)
+                            transform(scale = Scale(0.85f, 0.85f))
                         }
-                        event {
-                            click {
-                                preview.close()
-                            }
-                        }
-                        Image {
+
+                        View {
                             attr {
-                                size(screenWidth, screenHeight)
-                                src(preview.imageUrl)
-                                resizeContain()
+                                flex(1f)
+                                justifyContentCenter()
+                                alignItemsCenter()
                             }
                             event {
-                                loadSuccess {
-                                    preview.imageLoading = false
-                                    preview.opening = false
-                                }
-                                loadFailure {
-                                    preview.imageLoading = false
-                                    preview.opening = false
-                                }
                                 click {
                                     preview.close()
                                 }
                             }
-                        }
-                    }
-
-                    vif({ preview.imageLoading }) {
-                        View {
-                            attr {
-                                positionAbsolute()
-                                top(0f)
-                                left(0f)
-                                right(0f)
-                                bottom(0f)
-                                justifyContentCenter()
-                                alignItemsCenter()
-                            }
-                            Text {
+                            Image {
                                 attr {
-                                    text("加载中...")
-                                    fontSize(14f)
-                                    color(Color(0xAAFFFFFF))
+                                    size(screenWidth, screenHeight)
+                                    src(preview.imageUrl)
+                                    resizeContain()
+                                }
+                                event {
+                                    loadSuccess {
+                                        preview.imageLoading = false
+                                        preview.opening = false
+                                    }
+                                    loadFailure {
+                                        preview.imageLoading = false
+                                        preview.opening = false
+                                    }
+                                    click {
+                                        preview.close()
+                                    }
                                 }
                             }
                         }
-                    }
 
-                    View {
-                        attr {
-                            positionAbsolute()
-                            top(statusBarHeight + 10f)
-                            right(16f)
-                            width(24f)
-                            height(24f)
-                            borderRadius(12f)
-                            val isSelected = preview.selectedIds.contains(preview.imageId)
-                            if (isSelected) {
-                                backgroundColor(preview.themeColor)
-                            } else {
-                                backgroundColor(Color(0x66000000))
-                                border(Border(1.5f, BorderStyle.SOLID, Color.WHITE))
+                        vif({ preview.imageLoading }) {
+                            View {
+                                attr {
+                                    positionAbsolute()
+                                    top(0f)
+                                    left(0f)
+                                    right(0f)
+                                    bottom(0f)
+                                    justifyContentCenter()
+                                    alignItemsCenter()
+                                }
+                                View {
+                                    ref {
+                                        it.view?.animateToAttr(
+                                            Animation.linear(0.8f).repeatForever(false),
+                                            attrBlock = {
+                                                transform(rotate = Rotate(360f))
+                                            }
+                                        )
+                                    }
+                                    attr {
+                                        width(30f)
+                                        height(30f)
+                                        borderRadius(15f)
+                                        border(Border(2.5f, BorderStyle.SOLID, Color(0x33FFFFFF)))
+                                        transform(rotate = Rotate(0f))
+                                    }
+                                }
+                                Text {
+                                    attr {
+                                        marginTop(12f)
+                                        text("加载中")
+                                        fontSize(12f)
+                                        color(Color(0x88FFFFFF))
+                                    }
+                                }
                             }
-                            alignItemsCenter()
-                            justifyContentCenter()
                         }
-                        event {
-                            click {
-                                preview.toggleSelect()
+
+                        View {
+                            attr {
+                                positionAbsolute()
+                                top(statusBarHeight + 10f)
+                                right(16f)
+                                width(24f)
+                                height(24f)
+                                borderRadius(12f)
+                                val isSelected = preview.selectedIds.contains(preview.imageId)
+                                if (isSelected) {
+                                    backgroundColor(preview.themeColor)
+                                } else {
+                                    backgroundColor(Color(0x66000000))
+                                    border(Border(1.5f, BorderStyle.SOLID, Color.WHITE))
+                                }
+                                alignItemsCenter()
+                                justifyContentCenter()
+                            }
+                            event {
+                                click {
+                                    preview.toggleSelect()
+                                }
                             }
                         }
                     }

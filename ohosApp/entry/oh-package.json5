@@ -8,6 +8,7 @@
   "dependencies": {
     "@kuikly-open/render": '2.7.0',
     "@ohos/apng": "^1.0.0-rc.8",
-    "libentry.so": "file:./src/main/cpp/types/libentry"
+    "libentry.so": "file:./src/main/cpp/types/libentry",
+    "@yuki8273/kuikly-album": "file:../../KuiklyAlbumOhos"
   }
 }
