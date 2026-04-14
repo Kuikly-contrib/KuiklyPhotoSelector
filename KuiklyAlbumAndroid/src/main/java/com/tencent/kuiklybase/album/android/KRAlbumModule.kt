@@ -125,13 +125,18 @@ class KRAlbumModule : KuiklyRenderBaseModule() {
     }
 
     private fun queryImages(bucketId: String?, maxCount: Int): JSONArray {
-        val ctx = context ?: return JSONArray()
+        val ctx = context
+        android.util.Log.d("KRAlbum", "queryImages: context=$ctx, maxCount=$maxCount")
+        if (ctx == null) {
+            android.util.Log.e("KRAlbum", "queryImages: context is NULL!")
+            return JSONArray()
+        }
         val images = JSONArray()
         val projection = arrayOf(
             MediaStore.Images.Media._ID,
+            MediaStore.Images.Media.DATA,
             MediaStore.Images.Media.WIDTH,
             MediaStore.Images.Media.HEIGHT,
-            MediaStore.Images.Media.MIME_TYPE,
             MediaStore.Images.Media.DATE_ADDED
         )
         val selection = bucketId?.let { "${MediaStore.Images.Media.BUCKET_ID} = ?" }
@@ -141,16 +146,18 @@ class KRAlbumModule : KuiklyRenderBaseModule() {
             projection, selection, selectionArgs,
             "${MediaStore.Images.Media.DATE_ADDED} DESC"
         )
+        android.util.Log.d("KRAlbum", "queryImages: cursor=$cursor, count=${cursor?.count}")
         cursor?.use {
             var count = 0
             while (it.moveToNext() && count < maxCount) {
                 val id = it.getLong(it.getColumnIndexOrThrow(MediaStore.Images.Media._ID))
-                val contentUri = ContentUris.withAppendedId(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, id)
+                val filePath = it.getString(it.getColumnIndexOrThrow(MediaStore.Images.Media.DATA)) ?: ""
+                val uri = if (filePath.isNotEmpty()) "file://$filePath" else ContentUris.withAppendedId(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, id).toString()
                 val width = it.getInt(it.getColumnIndexOrThrow(MediaStore.Images.Media.WIDTH))
                 val height = it.getInt(it.getColumnIndexOrThrow(MediaStore.Images.Media.HEIGHT))
                 images.put(JSONObject().apply {
                     put("id", id.toString())
-                    put("uri", contentUri.toString())
+                    put("uri", uri)
                     put("width", width)
                     put("height", height)
                 })

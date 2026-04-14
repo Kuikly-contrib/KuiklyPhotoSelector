@@ -169,40 +169,50 @@ internal class AlbumDemoPage : BasePager() {
 
     override fun viewDidLoad() {
         super.viewDidLoad()
+        println("KRAlbum: viewDidLoad")
         val module = acquireModule<KRAlbumModule>(KRAlbumModule.MODULE_NAME)
         module.requestPermission { result ->
+            println("KRAlbum: permission result=$result")
             val granted = try {
                 val json = if (result is JSONObject) result else JSONObject(result.toString())
                 json.optBoolean("granted", false)
             } catch (_: Exception) {
                 result.toString().contains("true")
             }
+            println("KRAlbum: granted=$granted")
             if (granted) {
                 loadImages(module)
             } else {
+                println("KRAlbum: permission denied, stop loading")
                 loading = false
             }
         }
     }
 
     private fun loadImages(module: KRAlbumModule) {
+        println("KRAlbum: loadImages start")
         module.fetchImages(200) { imageResult ->
+            println("KRAlbum: fetchImages callback received")
             val list = mutableListOf<AlbumImage>()
             try {
                 val json = if (imageResult is JSONObject) imageResult else JSONObject(imageResult.toString())
                 val array = json.optJSONArray("data") ?: JSONArray()
+                println("KRAlbum: got ${array.length()} images")
                 for (i in 0 until array.length()) {
                     val item = array.optJSONObject(i) ?: continue
-                    list.add(
-                        AlbumImage(
-                            id = item.optString("id", ""),
-                            uri = item.optString("uri", ""),
-                            width = item.optInt("width", 0),
-                            height = item.optInt("height", 0)
-                        )
+                    val img = AlbumImage(
+                        id = item.optString("id", ""),
+                        uri = item.optString("uri", ""),
+                        width = item.optInt("width", 0),
+                        height = item.optInt("height", 0)
                     )
+                    if (i < 3) println("KRAlbum: image[$i] uri=${img.uri}")
+                    list.add(img)
                 }
-            } catch (_: Exception) {}
+            } catch (e: Exception) {
+                println("KRAlbum: parse error: $e")
+            }
+            println("KRAlbum: adding ${list.size} images, setting loading=false")
             list.forEach { images.add(it) }
             loading = false
         }
