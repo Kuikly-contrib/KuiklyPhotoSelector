@@ -25,7 +25,9 @@ class KRAlbumPreview(private val pager: Pager) {
     private var themeColor = Color(0xFF07C160)
     private var onSelectionChanged: ((Set<String>) -> Unit)? = null
     private var imageLoading by observable(true)
+    private var spinTrigger by observable(0)
     private var opening = false
+    private var showSelect = true
     private lateinit var containerRef: ViewRef<DivView>
 
     fun open(
@@ -34,6 +36,7 @@ class KRAlbumPreview(private val pager: Pager) {
         selectedIds: Set<String> = emptySet(),
         maxSelectCount: Int = 9,
         themeColor: Color = Color(0xFF07C160),
+        showSelect: Boolean = true,
         onSelectionChanged: ((Set<String>) -> Unit)? = null
     ) {
         if (opening || visible) return
@@ -45,6 +48,7 @@ class KRAlbumPreview(private val pager: Pager) {
         this.selectedIds = selectedIds
         this.maxSelectCount = maxSelectCount
         this.themeColor = themeColor
+        this.showSelect = showSelect
         this.onSelectionChanged = onSelectionChanged
         imageLoading = true
         currentIndex = index
@@ -153,12 +157,23 @@ class KRAlbumPreview(private val pager: Pager) {
                                 }
                                 View {
                                     ref {
-                                        it.view?.animateToAttr(
-                                            Animation.linear(0.8f).repeatForever(false),
-                                            attrBlock = {
-                                                transform(rotate = Rotate(360f))
-                                            }
-                                        )
+                                        val spinView = it.view
+                                        fun startSpin() {
+                                            spinView?.animateToAttr(
+                                                Animation.linear(0.8f),
+                                                completion = { finished ->
+                                                    if (finished) {
+                                                        spinView.animateToAttr(
+                                                            Animation.linear(0.01f),
+                                                            completion = { startSpin() },
+                                                            attrBlock = { transform(rotate = Rotate(0.01f)) }
+                                                        )
+                                                    }
+                                                },
+                                                attrBlock = { transform(rotate = Rotate(360f)) }
+                                            )
+                                        }
+                                        startSpin()
                                     }
                                     attr {
                                         width(30f)
@@ -168,38 +183,32 @@ class KRAlbumPreview(private val pager: Pager) {
                                         transform(rotate = Rotate(0f))
                                     }
                                 }
-                                Text {
-                                    attr {
-                                        marginTop(12f)
-                                        text("加载中")
-                                        fontSize(12f)
-                                        color(Color(0x88FFFFFF))
-                                    }
-                                }
                             }
                         }
 
-                        View {
-                            attr {
-                                positionAbsolute()
-                                top(statusBarHeight + 10f)
-                                right(16f)
-                                width(24f)
-                                height(24f)
-                                borderRadius(12f)
-                                val isSelected = preview.selectedIds.contains(preview.imageId)
-                                if (isSelected) {
-                                    backgroundColor(preview.themeColor)
-                                } else {
-                                    backgroundColor(Color(0x66000000))
-                                    border(Border(1.5f, BorderStyle.SOLID, Color.WHITE))
+                        vif({ preview.showSelect }) {
+                            View {
+                                attr {
+                                    positionAbsolute()
+                                    top(statusBarHeight + 10f)
+                                    right(16f)
+                                    width(24f)
+                                    height(24f)
+                                    borderRadius(12f)
+                                    val isSelected = preview.selectedIds.contains(preview.imageId)
+                                    if (isSelected) {
+                                        backgroundColor(preview.themeColor)
+                                    } else {
+                                        backgroundColor(Color(0x66000000))
+                                        border(Border(1.5f, BorderStyle.SOLID, Color.WHITE))
+                                    }
+                                    alignItemsCenter()
+                                    justifyContentCenter()
                                 }
-                                alignItemsCenter()
-                                justifyContentCenter()
-                            }
-                            event {
-                                click {
-                                    preview.toggleSelect()
+                                event {
+                                    click {
+                                        preview.toggleSelect()
+                                    }
                                 }
                             }
                         }

@@ -16,8 +16,6 @@ import com.tencent.kuikly.core.directives.velse
 import com.tencent.kuiklybase.album.KRAlbumModule
 import com.tencent.kuiklybase.album.KRAlbumImage
 import com.tencent.kuiklybase.album.KRAlbumPreview
-import com.tencent.kuikly.core.nvi.serialization.json.JSONArray
-import com.tencent.kuikly.core.nvi.serialization.json.JSONObject
 
 @Page("router")
 internal class AlbumDemoPage : BasePager() {
@@ -181,40 +179,14 @@ internal class AlbumDemoPage : BasePager() {
         super.viewDidLoad()
         val module = acquireModule<KRAlbumModule>(KRAlbumModule.MODULE_NAME)
         module.requestPermission { result ->
-            val granted = try {
-                val json = if (result is JSONObject) result else JSONObject(result.toString())
-                json.optBoolean("granted", false)
-            } catch (_: Exception) {
-                result.toString().contains("true")
-            }
-            if (granted) {
-                loadImages(module)
+            if (module.isPermissionGranted(result)) {
+                module.fetchImageList(200) { list ->
+                    list.forEach { images.add(it) }
+                    loading = false
+                }
             } else {
                 loading = false
             }
-        }
-    }
-
-    private fun loadImages(module: KRAlbumModule) {
-        module.fetchImages(200) { imageResult ->
-            val list = mutableListOf<KRAlbumImage>()
-            try {
-                val json = if (imageResult is JSONObject) imageResult else JSONObject(imageResult.toString())
-                val array = json.optJSONArray("data") ?: JSONArray()
-                for (i in 0 until array.length()) {
-                    val item = array.optJSONObject(i) ?: continue
-                    list.add(KRAlbumImage(
-                        id = item.optString("id", ""),
-                        uri = item.optString("uri", ""),
-                        width = item.optInt("width", 0),
-                        height = item.optInt("height", 0)
-                    ))
-                }
-            } catch (e: Exception) {
-                println("KRAlbum: parse error: $e")
-            }
-            list.forEach { images.add(it) }
-            loading = false
         }
     }
 

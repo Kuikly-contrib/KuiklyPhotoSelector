@@ -265,6 +265,11 @@ function publishAll() {
       return 1
     fi
 
+    # 发布 Android 原生模块
+    if ! publishModule "KuiklyAlbumAndroid" "${PUBLISH_TASK}" "${kt_version}" "${build_version}" "false"; then
+      return 1
+    fi
+
     if [[ -z "${final_versions}" ]]; then
       final_versions="${build_version}"
     else
