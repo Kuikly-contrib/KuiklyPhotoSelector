@@ -1,0 +1,12 @@
+{
+  "name": "@yuki8273/kuikly-album",
+  "version": "1.0.0",
+  "description": "KuiklyAlbum HarmonyOS Native Module",
+  "main": "Index.ets",
+  "author": "Kuikly Team",
+  "license": "MIT",
+  "dependencies": {
+    "@kuikly-open/render": ">=2.7.0"
+  },
+  "modelVersion": "5.0.0"
+}

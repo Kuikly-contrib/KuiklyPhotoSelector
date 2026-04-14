@@ -1,0 +1,7 @@
+{
+  "module": {
+    "name": "KuiklyAlbumOhos",
+    "type": "har",
+    "deviceTypes": ["default", "tablet"]
+  }
+}

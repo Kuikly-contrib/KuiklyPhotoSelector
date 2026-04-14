@@ -1,0 +1,1 @@
+export { KRAlbumModule } from './KRAlbumModule'
