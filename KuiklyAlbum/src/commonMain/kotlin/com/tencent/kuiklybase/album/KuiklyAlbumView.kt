@@ -10,7 +10,6 @@ import com.tencent.kuikly.core.base.ViewBuilder
 import com.tencent.kuikly.core.base.ViewContainer
 import com.tencent.kuikly.core.directives.vif
 import com.tencent.kuikly.core.reactive.handler.observable
-import com.tencent.kuikly.core.reactive.handler.observableList
 import com.tencent.kuikly.core.views.*
 
 // ─── Attr ───
@@ -21,16 +20,16 @@ class KuiklyAlbumAttr : ComposeAttr() {
     internal var itemSpacing = 3f
     internal var themeColor = Color(0xFF07C160)
     internal var showVideoLabel = true
+    internal var maxImageCount = Int.MAX_VALUE
 
-    init {
-        flex(1f)
-    }
+    init { flex(1f) }
 
     fun maxSelectCount(count: Int) { maxSelectCount = count }
     fun columnCount(count: Int) { columnCount = count }
     fun itemSpacing(spacing: Float) { itemSpacing = spacing }
     fun themeColor(color: Color) { themeColor = color }
     fun showVideoLabel(show: Boolean) { showVideoLabel = show }
+    fun maxImageCount(count: Int) { maxImageCount = count }
 }
 
 // ─── Event ───
@@ -48,20 +47,27 @@ class KuiklyAlbumEvent : ComposeEvent() {
 /**
  * 相册选择器核心组件
  *
- * 架构：List + vforIndex 全量加载行分组
+ * 架构：元数据全量 + 可见性驱动图片懒加载
  *
- * 原始图片按 columnCount 预分组为行 → rowList (observableList)
- * vforIndex 遍历 rowList，每次迭代创建一个行 View（行内 for 循环渲染格子）
- * 全量虚拟节点 + 平台 View 动态创建销毁，无复用，无白屏闪烁
+ * 1. 元数据（路径/ID/尺寸）全量同步分组 → rowList
+ * 2. Scroller + vforIndex 全量创建虚拟节点（轻量，每行几百字节）
+ * 3. 图片 src 由可见性版本号 (visibleVersion) 驱动：
+ *    - willAppear：行进入可见区 → 加入 _visibleRows → visibleVersion++ → attr 读取时设置 src
+ *    - didDisappear：行离开可见区 → 移出 _visibleRows → visibleVersion++ → attr 读取时清空 src
+ * 4. 不可见的行只有浅灰占位，不触发图片解码，内存可控
  */
 class KuiklyAlbumView : ComposeView<KuiklyAlbumAttr, KuiklyAlbumEvent>() {
 
     // ─── 原始数据 ───
     private val _images = mutableListOf<KRAlbumImage>()
 
-    // ─── 行分组（vforIndex 消费） ───
-    var rowList by observableList<KRAlbumRow>()
-        private set
+    // ─── 行分组（普通 List，body 时直接 for 遍历） ───
+    private val _rowList = mutableListOf<KRAlbumRow>()
+
+    // ─── scroll 驱动图片懒加载 ───
+    /** 当前加载图片的行范围 [loadStartRow, loadEndRow) */
+    private var loadStartRow by observable(0)
+    private var loadEndRow by observable(Int.MAX_VALUE)
 
     var selectionVersion by observable(0)
         private set
@@ -74,7 +80,6 @@ class KuiklyAlbumView : ComposeView<KuiklyAlbumAttr, KuiklyAlbumEvent>() {
     private val preview by lazy { KRAlbumPreview(getPager()) }
 
     // ─── 选中状态 ───
-
     private val _selectedList = mutableListOf<String>()
     private val _selectedSet = hashSetOf<String>()
     private val _selectIndexMap = hashMapOf<String, Int>()
@@ -92,12 +97,15 @@ class KuiklyAlbumView : ComposeView<KuiklyAlbumAttr, KuiklyAlbumEvent>() {
         }
     }
 
+    fun isRowLoaded(rowIndex: Int): Boolean = rowIndex in loadStartRow until loadEndRow
+
     override fun createAttr(): KuiklyAlbumAttr = KuiklyAlbumAttr()
     override fun createEvent(): KuiklyAlbumEvent = KuiklyAlbumEvent()
 
     override fun body(): ViewBuilder {
         val ctx = this
         val screenWidth = pagerData.pageViewWidth
+        val screenHeight = pagerData.pageViewHeight
 
         return {
             // ─── 加载中 ───
@@ -150,7 +158,7 @@ class KuiklyAlbumView : ComposeView<KuiklyAlbumAttr, KuiklyAlbumEvent>() {
             }
 
             // ─── 空状态 ───
-            vif({ !ctx.loading && !ctx.permissionDenied && ctx.rowList.isEmpty() }) {
+            vif({ !ctx.loading && !ctx.permissionDenied && ctx._images.isEmpty() }) {
                 View {
                     attr {
                         flex(1f)
@@ -170,25 +178,40 @@ class KuiklyAlbumView : ComposeView<KuiklyAlbumAttr, KuiklyAlbumEvent>() {
             }
 
             // ─── 图片网格 ───
-            vif({ !ctx.loading && !ctx.permissionDenied && ctx.rowList.isNotEmpty() }) {
+            vif({ !ctx.loading && !ctx.permissionDenied && ctx._images.isNotEmpty() }) {
                 val a = ctx.attr
                 val cols = a.columnCount
                 val spacing = a.itemSpacing
                 val itemSize = (screenWidth - spacing * (cols + 1).toFloat()) / cols.toFloat()
+
+                val rowHeight = itemSize + spacing
 
                 Scroller {
                     attr {
                         flex(1f)
                         showScrollerIndicator(false)
                     }
+                    event {
+                        scroll { params ->
+                            val offsetY = params.offsetY
+                            // 上下各一屏缓冲（共 3 屏）
+                            val visibleTop = (offsetY - screenHeight).coerceAtLeast(0f)
+                            val visibleBottom = offsetY + screenHeight + screenHeight
+                            val newStart = (visibleTop / rowHeight).toInt().coerceAtLeast(0)
+                            val newEnd = ((visibleBottom / rowHeight).toInt() + 1).coerceAtMost(ctx._rowList.size)
+                            if (newStart != ctx.loadStartRow || newEnd != ctx.loadEndRow) {
+                                ctx.loadStartRow = newStart
+                                ctx.loadEndRow = newEnd
+                            }
+                        }
+                    }
 
-                    // 直接 for 循环构建所有行，Scroller 无 View 复用
-                    for (row in ctx.rowList) {
+                    for ((rowIndex, row) in ctx._rowList.withIndex()) {
                         View {
                             attr {
                                 flexDirectionRow()
                                 width(screenWidth)
-                                height(itemSize + spacing)
+                                height(rowHeight)
                                 paddingTop(spacing)
                                 paddingLeft(spacing)
                             }
@@ -196,7 +219,7 @@ class KuiklyAlbumView : ComposeView<KuiklyAlbumAttr, KuiklyAlbumEvent>() {
                             for (col in 0 until cols) {
                                 val img = row.items.getOrNull(col)
                                 if (img != null) {
-                                    ctx.buildImageCell(this, img, row.startIndex + col, itemSize, spacing)
+                                    ctx.buildImageCell(this, img, row.startIndex + col, rowIndex, itemSize, spacing)
                                 } else {
                                     View {
                                         attr {
@@ -220,6 +243,7 @@ class KuiklyAlbumView : ComposeView<KuiklyAlbumAttr, KuiklyAlbumEvent>() {
         parent: ViewContainer<*, *>,
         image: KRAlbumImage,
         globalIndex: Int,
+        rowIndex: Int,
         itemSize: Float,
         spacing: Float
     ) {
@@ -232,6 +256,7 @@ class KuiklyAlbumView : ComposeView<KuiklyAlbumAttr, KuiklyAlbumEvent>() {
                     backgroundColor(Color(0xFFE5E5E5))
                 }
 
+                // 缩略图：只有行可见时才设置 src，不可见时清空
                 Image {
                     attr {
                         positionAbsolute()
@@ -239,7 +264,14 @@ class KuiklyAlbumView : ComposeView<KuiklyAlbumAttr, KuiklyAlbumEvent>() {
                         left(0f)
                         right(0f)
                         bottom(0f)
-                        src(image.displayUri())
+                        // 读取 loadStartRow/loadEndRow 建立响应式依赖
+                        val s = ctx.loadStartRow
+                        val e = ctx.loadEndRow
+                        if (ctx.isRowLoaded(rowIndex)) {
+                            src(image.displayUri())
+                        } else {
+                            src("")
+                        }
                         resizeCover()
                     }
                     event {
@@ -256,8 +288,7 @@ class KuiklyAlbumView : ComposeView<KuiklyAlbumAttr, KuiklyAlbumEvent>() {
                         right(0f)
                         bottom(0f)
                         val ver = ctx.selectionVersion
-                        val isSelected = ctx._selectedSet.contains(image.id)
-                        if (isSelected) {
+                        if (ctx._selectedSet.contains(image.id)) {
                             backgroundColor(Color(0x33000000))
                         } else {
                             backgroundColor(Color.TRANSPARENT)
@@ -309,8 +340,7 @@ class KuiklyAlbumView : ComposeView<KuiklyAlbumAttr, KuiklyAlbumEvent>() {
                         height(28f)
                         borderRadius(14f)
                         val ver = ctx.selectionVersion
-                        val isSelected = ctx._selectedSet.contains(image.id)
-                        if (isSelected) {
+                        if (ctx._selectedSet.contains(image.id)) {
                             backgroundColor(ctx.attr.themeColor)
                         } else {
                             backgroundColor(Color(0x66000000))
@@ -325,9 +355,8 @@ class KuiklyAlbumView : ComposeView<KuiklyAlbumAttr, KuiklyAlbumEvent>() {
                     Text {
                         attr {
                             val ver = ctx.selectionVersion
-                            val isSelected = ctx._selectedSet.contains(image.id)
                             val selectNum = ctx.getSelectIndex(image.id)
-                            if (isSelected && selectNum > 0) {
+                            if (ctx._selectedSet.contains(image.id) && selectNum > 0) {
                                 text("$selectNum")
                             } else {
                                 text("")
@@ -367,16 +396,20 @@ class KuiklyAlbumView : ComposeView<KuiklyAlbumAttr, KuiklyAlbumEvent>() {
 
     private fun setImages(list: List<KRAlbumImage>) {
         _images.clear()
-        _images.addAll(list)
+        val max = attr.maxImageCount
+        if (max < list.size) {
+            _images.addAll(list.subList(0, max))
+        } else {
+            _images.addAll(list)
+        }
         val cols = attr.columnCount
-        val rows = mutableListOf<KRAlbumRow>()
+        _rowList.clear()
         var i = 0
         while (i < _images.size) {
             val end = (i + cols).coerceAtMost(_images.size)
-            rows.add(KRAlbumRow(items = _images.subList(i, end).toList(), startIndex = i))
+            _rowList.add(KRAlbumRow(items = _images.subList(i, end).toList(), startIndex = i))
             i += cols
         }
-        rowList.addAll(rows)
     }
 
     fun getSelectedImages(): List<KRAlbumImage> {
