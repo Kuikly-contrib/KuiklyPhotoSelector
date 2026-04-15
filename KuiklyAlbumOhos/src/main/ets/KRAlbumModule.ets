@@ -7,6 +7,7 @@ import { abilityAccessCtrl, common, Permissions } from '@kit.AbilityKit';
 class AlbumImageInfo {
   id: string = '';
   uri: string = '';
+  thumbnailUri: string = '';
   width: number = 0;
   height: number = 0;
 }
@@ -88,11 +89,11 @@ export class KRAlbumModule extends KuiklyRenderBaseModule {
 
   private async fetchImages(paramsStr: string | null, callback: KuiklyRenderCallback | null): Promise<void> {
     console.info(`KRAlbumModule: fetchImages called, paramsStr=${paramsStr}`);
-    let maxCount = 200;
+    let maxCount = Number.MAX_SAFE_INTEGER;
     if (paramsStr) {
       try {
         const p = JSON.parse(paramsStr) as Record<string, number>;
-        maxCount = p['maxCount'] ?? 200;
+        maxCount = p['maxCount'] ?? Number.MAX_SAFE_INTEGER;
       } catch (_) {}
     }
     console.info(`KRAlbumModule: fetchImages maxCount=${maxCount}`);
@@ -115,6 +116,7 @@ export class KRAlbumModule extends KuiklyRenderBaseModule {
           const info = new AlbumImageInfo();
           info.id = asset.uri;
           info.uri = asset.uri;
+          info.thumbnailUri = asset.uri;
           info.width = asset.get('width') as number ?? 0;
           info.height = asset.get('height') as number ?? 0;
           if (count < 3) {
@@ -224,6 +226,7 @@ export class KRAlbumModule extends KuiklyRenderBaseModule {
         const info = new AlbumImageInfo();
         info.id = asset.uri;
         info.uri = asset.uri;
+        info.thumbnailUri = asset.uri;
         info.width = asset.get('width') as number ?? 0;
         info.height = asset.get('height') as number ?? 0;
         images.push(info);

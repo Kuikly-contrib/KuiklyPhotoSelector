@@ -68,25 +68,31 @@ TDF_EXPORT_MODULE(KRAlbumModule)
 - (void)fetchImages:(NSDictionary *)args {
     KuiklyRenderCallback callback = args[KR_CALLBACK_KEY];
     NSString *paramsStr = args[@"data"];
-    NSInteger maxCount = 200;
+    NSInteger maxCount = 0;
     if (paramsStr) {
         NSData *data = [paramsStr dataUsingEncoding:NSUTF8StringEncoding];
         NSDictionary *params = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
-        maxCount = [params[@"maxCount"] integerValue] ?: 200;
+        NSNumber *maxCountNum = params[@"maxCount"];
+        if (maxCountNum) {
+            NSInteger val = [maxCountNum integerValue];
+            maxCount = (val > 0 && val < NSIntegerMax) ? val : 0;
+        }
     }
     
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
         PHFetchOptions *options = [[PHFetchOptions alloc] init];
         options.sortDescriptors = @[[NSSortDescriptor sortDescriptorWithKey:@"creationDate" ascending:NO]];
-        options.fetchLimit = maxCount;
+        if (maxCount > 0) options.fetchLimit = maxCount;
         
         PHFetchResult *result = [PHAsset fetchAssetsWithMediaType:PHAssetMediaTypeImage options:options];
         NSMutableArray *images = [NSMutableArray array];
         
         [result enumerateObjectsUsingBlock:^(PHAsset *asset, NSUInteger idx, BOOL *stop) {
+            NSString *phUri = [NSString stringWithFormat:@"ph://%@", asset.localIdentifier];
             [images addObject:@{
                 @"id": asset.localIdentifier,
-                @"uri": [NSString stringWithFormat:@"ph://%@", asset.localIdentifier],
+                @"uri": phUri,
+                @"thumbnailUri": phUri,
                 @"width": @(asset.pixelWidth),
                 @"height": @(asset.pixelHeight)
             }];
@@ -150,13 +156,14 @@ TDF_EXPORT_MODULE(KRAlbumModule)
     KuiklyRenderCallback callback = args[KR_CALLBACK_KEY];
     NSString *paramsStr = args[@"data"];
     NSString *albumId = nil;
-    NSInteger maxCount = 200;
+    NSInteger maxCount = NSIntegerMax;
     
     if (paramsStr) {
         NSData *data = [paramsStr dataUsingEncoding:NSUTF8StringEncoding];
         NSDictionary *params = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
         albumId = params[@"albumId"];
-        maxCount = [params[@"maxCount"] integerValue] ?: 200;
+        NSNumber *maxCountNum = params[@"maxCount"];
+        if (maxCountNum) maxCount = [maxCountNum integerValue];
     }
     
     if (!albumId) {
@@ -176,16 +183,18 @@ TDF_EXPORT_MODULE(KRAlbumModule)
         
         PHFetchOptions *options = [[PHFetchOptions alloc] init];
         options.sortDescriptors = @[[NSSortDescriptor sortDescriptorWithKey:@"creationDate" ascending:NO]];
-        options.fetchLimit = maxCount;
+        if (maxCount > 0) options.fetchLimit = maxCount;
         
         PHFetchResult *result = [PHAsset fetchAssetsInAssetCollection:collection options:options];
         NSMutableArray *images = [NSMutableArray array];
         
         [result enumerateObjectsUsingBlock:^(PHAsset *asset, NSUInteger idx, BOOL *stop) {
             if (asset.mediaType == PHAssetMediaTypeImage) {
+                NSString *phUri = [NSString stringWithFormat:@"ph://%@", asset.localIdentifier];
                 [images addObject:@{
                     @"id": asset.localIdentifier,
-                    @"uri": [NSString stringWithFormat:@"ph://%@", asset.localIdentifier],
+                    @"uri": phUri,
+                    @"thumbnailUri": phUri,
                     @"width": @(asset.pixelWidth),
                     @"height": @(asset.pixelHeight)
                 }];

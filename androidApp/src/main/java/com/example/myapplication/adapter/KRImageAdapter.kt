@@ -27,8 +27,8 @@ class KRImageAdapter(val context: Context) : IKRImageAdapter {
     ) {
         if (imageLoadOption.isBase64()) {
             loadFromBase64(imageLoadOption, callback)
-        } else if (imageLoadOption.isWebUrl() || imageLoadOption.isAssets() || imageLoadOption.isFile()) {
-            // http/assets/file 图片使用 glide 加载
+        } else if (imageLoadOption.isWebUrl() || imageLoadOption.isAssets() || imageLoadOption.isFile()
+            || imageLoadOption.src.startsWith("content://")) {
             requestImage(imageLoadOption, callback)
         }
     }

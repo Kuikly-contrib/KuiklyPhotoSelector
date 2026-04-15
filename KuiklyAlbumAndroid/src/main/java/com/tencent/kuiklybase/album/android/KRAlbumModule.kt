@@ -62,8 +62,8 @@ class KRAlbumModule : KuiklyRenderBaseModule() {
 
     private fun fetchImages(params: String?, callback: KuiklyRenderCallback?) {
         val maxCount = params?.let {
-            try { JSONObject(it).optInt("maxCount", 200) } catch (_: Exception) { 200 }
-        } ?: 200
+            try { JSONObject(it).optInt("maxCount", Int.MAX_VALUE) } catch (_: Exception) { Int.MAX_VALUE }
+        } ?: Int.MAX_VALUE
         Thread {
             val images = queryImages(null, maxCount)
             Handler(Looper.getMainLooper()).post {
@@ -151,13 +151,13 @@ class KRAlbumModule : KuiklyRenderBaseModule() {
             var count = 0
             while (it.moveToNext() && count < maxCount) {
                 val id = it.getLong(it.getColumnIndexOrThrow(MediaStore.Images.Media._ID))
-                val filePath = it.getString(it.getColumnIndexOrThrow(MediaStore.Images.Media.DATA)) ?: ""
-                val uri = if (filePath.isNotEmpty()) "file://$filePath" else ContentUris.withAppendedId(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, id).toString()
+                val contentUri = ContentUris.withAppendedId(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, id).toString()
                 val width = it.getInt(it.getColumnIndexOrThrow(MediaStore.Images.Media.WIDTH))
                 val height = it.getInt(it.getColumnIndexOrThrow(MediaStore.Images.Media.HEIGHT))
                 images.put(JSONObject().apply {
                     put("id", id.toString())
-                    put("uri", uri)
+                    put("uri", contentUri)
+                    put("thumbnailUri", contentUri)
                     put("width", width)
                     put("height", height)
                 })

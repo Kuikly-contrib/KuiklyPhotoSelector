@@ -17,7 +17,7 @@ class KRAlbumModule : Module() {
         return syncCallNative(METHOD_CHECK_PERMISSION, null, null)
     }
 
-    fun fetchImages(maxCount: Int = 200, callback: CallbackFn) {
+    fun fetchImages(maxCount: Int = Int.MAX_VALUE, callback: CallbackFn) {
         val params = JSONObject().apply {
             put("maxCount", maxCount)
         }
@@ -28,7 +28,7 @@ class KRAlbumModule : Module() {
         callNative(METHOD_FETCH_ALBUMS, null, callback)
     }
 
-    fun fetchImagesFromAlbum(albumId: String, maxCount: Int = 200, callback: CallbackFn) {
+    fun fetchImagesFromAlbum(albumId: String, maxCount: Int = Int.MAX_VALUE, callback: CallbackFn) {
         val params = JSONObject().apply {
             put("albumId", albumId)
             put("maxCount", maxCount)
@@ -36,13 +36,13 @@ class KRAlbumModule : Module() {
         callNative(METHOD_FETCH_IMAGES_FROM_ALBUM, params, callback)
     }
 
-    fun fetchImageList(maxCount: Int = 200, callback: (List<KRAlbumImage>) -> Unit) {
+    fun fetchImageList(maxCount: Int = Int.MAX_VALUE, callback: (List<KRAlbumImage>) -> Unit) {
         fetchImages(maxCount) { result ->
             callback(parseImages(result))
         }
     }
 
-    fun fetchImageListFromAlbum(albumId: String, maxCount: Int = 200, callback: (List<KRAlbumImage>) -> Unit) {
+    fun fetchImageListFromAlbum(albumId: String, maxCount: Int = Int.MAX_VALUE, callback: (List<KRAlbumImage>) -> Unit) {
         fetchImagesFromAlbum(albumId, maxCount) { result ->
             callback(parseImages(result))
         }
@@ -80,9 +80,11 @@ class KRAlbumModule : Module() {
                 val array = json.optJSONArray("data") ?: JSONArray()
                 for (i in 0 until array.length()) {
                     val item = array.optJSONObject(i) ?: continue
+                    val uri = item.optString("uri", "")
                     list.add(KRAlbumImage(
                         id = item.optString("id", ""),
-                        uri = item.optString("uri", ""),
+                        uri = uri,
+                        thumbnailUri = item.optString("thumbnailUri", uri),
                         width = item.optInt("width", 0),
                         height = item.optInt("height", 0)
                     ))

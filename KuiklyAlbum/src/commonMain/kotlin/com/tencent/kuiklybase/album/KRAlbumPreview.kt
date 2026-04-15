@@ -4,16 +4,15 @@ import com.tencent.kuikly.core.base.Animation
 import com.tencent.kuikly.core.base.Border
 import com.tencent.kuikly.core.base.BorderStyle
 import com.tencent.kuikly.core.base.Color
-import com.tencent.kuikly.core.base.Rotate
 import com.tencent.kuikly.core.base.Scale
 import com.tencent.kuikly.core.base.ViewBuilder
 import com.tencent.kuikly.core.base.ViewRef
 import com.tencent.kuikly.core.directives.vif
-import com.tencent.kuikly.core.pager.Pager
+import com.tencent.kuikly.core.pager.IPager
 import com.tencent.kuikly.core.reactive.handler.observable
 import com.tencent.kuikly.core.views.*
 
-class KRAlbumPreview(private val pager: Pager) {
+class KRAlbumPreview(private val pager: IPager) {
 
     var visible by observable(false)
     var currentIndex by observable(0)
@@ -24,8 +23,6 @@ class KRAlbumPreview(private val pager: Pager) {
     private var maxSelectCount = 9
     private var themeColor = Color(0xFF07C160)
     private var onSelectionChanged: ((Set<String>) -> Unit)? = null
-    private var imageLoading by observable(true)
-    private var spinTrigger by observable(0)
     private var opening = false
     private var showSelect = true
     private lateinit var containerRef: ViewRef<DivView>
@@ -50,7 +47,6 @@ class KRAlbumPreview(private val pager: Pager) {
         this.themeColor = themeColor
         this.showSelect = showSelect
         this.onSelectionChanged = onSelectionChanged
-        imageLoading = true
         currentIndex = index
         visible = true
     }
@@ -77,9 +73,9 @@ class KRAlbumPreview(private val pager: Pager) {
 
     fun buildPreview(): ViewBuilder {
         val preview = this
-        val screenWidth = pager.pagerData.pageViewWidth
-        val screenHeight = pager.pagerData.pageViewHeight
-        val statusBarHeight = pager.pagerData.statusBarHeight
+        val screenWidth = pager.pageData.pageViewWidth
+        val screenHeight = pager.pageData.pageViewHeight
+        val statusBarHeight = pager.pageData.statusBarHeight
 
         return {
             vif({ preview.visible }) {
@@ -130,57 +126,13 @@ class KRAlbumPreview(private val pager: Pager) {
                                 }
                                 event {
                                     loadSuccess {
-                                        preview.imageLoading = false
                                         preview.opening = false
                                     }
                                     loadFailure {
-                                        preview.imageLoading = false
                                         preview.opening = false
                                     }
                                     click {
                                         preview.close()
-                                    }
-                                }
-                            }
-                        }
-
-                        vif({ preview.imageLoading }) {
-                            View {
-                                attr {
-                                    positionAbsolute()
-                                    top(0f)
-                                    left(0f)
-                                    right(0f)
-                                    bottom(0f)
-                                    justifyContentCenter()
-                                    alignItemsCenter()
-                                }
-                                View {
-                                    ref {
-                                        val spinView = it.view
-                                        fun startSpin() {
-                                            spinView?.animateToAttr(
-                                                Animation.linear(0.8f),
-                                                completion = { finished ->
-                                                    if (finished) {
-                                                        spinView.animateToAttr(
-                                                            Animation.linear(0.01f),
-                                                            completion = { startSpin() },
-                                                            attrBlock = { transform(rotate = Rotate(0.01f)) }
-                                                        )
-                                                    }
-                                                },
-                                                attrBlock = { transform(rotate = Rotate(360f)) }
-                                            )
-                                        }
-                                        startSpin()
-                                    }
-                                    attr {
-                                        width(30f)
-                                        height(30f)
-                                        borderRadius(15f)
-                                        border(Border(2.5f, BorderStyle.SOLID, Color(0x33FFFFFF)))
-                                        transform(rotate = Rotate(0f))
                                     }
                                 }
                             }
