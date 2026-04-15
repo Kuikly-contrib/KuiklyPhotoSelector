@@ -43,6 +43,15 @@ data class KRAlbumImage(
 }
 
 /**
+ * 相册网格行数据（每行 1~columnCount 张图片）
+ */
+data class KRAlbumRow(
+    val items: List<KRAlbumImage>,
+    /** 此行第一张图片在原始列表中的起始索引 */
+    val startIndex: Int
+)
+
+/**
  * 相册信息数据模型
  */
 data class KRAlbumInfo(

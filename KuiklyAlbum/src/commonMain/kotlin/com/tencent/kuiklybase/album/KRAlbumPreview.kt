@@ -14,12 +14,6 @@ import com.tencent.kuikly.core.views.*
 
 /**
  * 相册图片预览组件
- *
- * 性能优化：
- * - imageList 直接持有外部引用，不做拷贝
- * - close 时及时释放 imageList 引用，避免内存泄漏
- * - 选中状态使用 HashSet O(1) 查找 + List 保持顺序
- * - 编号查找使用 indexOf（选中列表通常 < 10 项，可接受）
  */
 class KRAlbumPreview(private val pager: IPager) {
 
