@@ -167,7 +167,7 @@ TDF_EXPORT_MODULE(KRAlbumModule)
     }
     
     if (!albumId) {
-        if (callback) callback(@"[]");
+        if (callback) callback(@"{\"data\":[]}");
         return;
     }
     
@@ -176,7 +176,7 @@ TDF_EXPORT_MODULE(KRAlbumModule)
         PHAssetCollection *collection = collections.firstObject;
         if (!collection) {
             dispatch_async(dispatch_get_main_queue(), ^{
-                if (callback) callback(@"[]");
+                if (callback) callback(@"{\"data\":[]}");
             });
             return;
         }

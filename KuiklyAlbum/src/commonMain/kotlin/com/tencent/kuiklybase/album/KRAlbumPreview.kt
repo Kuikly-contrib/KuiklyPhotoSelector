@@ -12,6 +12,15 @@ import com.tencent.kuikly.core.pager.IPager
 import com.tencent.kuikly.core.reactive.handler.observable
 import com.tencent.kuikly.core.views.*
 
+/**
+ * 相册图片预览组件
+ *
+ * 性能优化：
+ * - imageList 直接持有外部引用，不做拷贝
+ * - close 时及时释放 imageList 引用，避免内存泄漏
+ * - 选中状态使用 HashSet O(1) 查找 + List 保持顺序
+ * - 编号查找使用 indexOf（选中列表通常 < 10 项，可接受）
+ */
 class KRAlbumPreview(private val pager: IPager) {
 
     var visible by observable(false)
@@ -19,13 +28,21 @@ class KRAlbumPreview(private val pager: IPager) {
 
     private var imageUrl by observable("")
     private var imageId by observable("")
-    private var selectedIds by observable(setOf<String>())
+    /** 选中 ID 集合（O(1) 查找） */
+    private var selectedSet = hashSetOf<String>()
+    /** 有序选中列表（保持顺序） */
+    private var selectedList = mutableListOf<String>()
+    /** 选中状态版本号（触发 UI 更新） */
+    private var selectVersion by observable(0)
     private var maxSelectCount = 9
     private var themeColor = Color(0xFF07C160)
     private var onSelectionChanged: ((Set<String>) -> Unit)? = null
     private var opening = false
     private var showSelect = true
+    /** 直接持有外部引用，不拷贝 */
+    private var imageList: List<KRAlbumImage> = emptyList()
     private lateinit var containerRef: ViewRef<DivView>
+    private var counterText by observable("")
 
     fun open(
         images: List<KRAlbumImage>,
@@ -40,14 +57,17 @@ class KRAlbumPreview(private val pager: IPager) {
         opening = true
 
         val image = images.getOrNull(index) ?: run { opening = false; return }
+        this.imageList = images // 直接引用，不拷贝
         this.imageUrl = image.uri
         this.imageId = image.id
-        this.selectedIds = selectedIds
+        this.selectedSet = hashSetOf<String>().apply { addAll(selectedIds) }
+        this.selectedList = selectedIds.toMutableList()
         this.maxSelectCount = maxSelectCount
         this.themeColor = themeColor
         this.showSelect = showSelect
         this.onSelectionChanged = onSelectionChanged
         currentIndex = index
+        updateCounterText()
         visible = true
     }
 
@@ -59,6 +79,7 @@ class KRAlbumPreview(private val pager: IPager) {
                 completion = { _ ->
                     visible = false
                     opening = false
+                    releaseResources()
                 },
                 attrBlock = {
                     opacity(0f)
@@ -68,7 +89,36 @@ class KRAlbumPreview(private val pager: IPager) {
         } else {
             visible = false
             opening = false
+            releaseResources()
         }
+    }
+
+    /** 及时释放资源，避免内存泄漏 */
+    private fun releaseResources() {
+        imageList = emptyList()
+        onSelectionChanged = null
+        selectedSet.clear()
+        selectedList.clear()
+    }
+
+    private fun showPrevious() {
+        if (currentIndex > 0) navigateTo(currentIndex - 1)
+    }
+
+    private fun showNext() {
+        if (currentIndex < imageList.size - 1) navigateTo(currentIndex + 1)
+    }
+
+    private fun navigateTo(index: Int) {
+        val image = imageList.getOrNull(index) ?: return
+        currentIndex = index
+        imageUrl = image.uri
+        imageId = image.id
+        updateCounterText()
+    }
+
+    private fun updateCounterText() {
+        counterText = "${currentIndex + 1} / ${imageList.size}"
     }
 
     fun buildPreview(): ViewBuilder {
@@ -107,6 +157,91 @@ class KRAlbumPreview(private val pager: IPager) {
                             transform(scale = Scale(0.85f, 0.85f))
                         }
 
+                        // ─── 顶部栏：计数 + 选中按钮 ───
+                        View {
+                            attr {
+                                positionAbsolute()
+                                top(0f)
+                                left(0f)
+                                right(0f)
+                                height(statusBarHeight + 56f)
+                                paddingTop(statusBarHeight)
+                                flexDirectionRow()
+                                alignItemsCenter()
+                                justifyContentSpaceBetween()
+                                paddingLeft(16f)
+                                paddingRight(16f)
+                                zIndex(10)
+                            }
+                            // 关闭按钮
+                            View {
+                                attr {
+                                    width(32f)
+                                    height(32f)
+                                    borderRadius(16f)
+                                    backgroundColor(Color(0x66000000))
+                                    alignItemsCenter()
+                                    justifyContentCenter()
+                                }
+                                event {
+                                    click { preview.close() }
+                                }
+                                Text {
+                                    attr {
+                                        text("✕")
+                                        fontSize(16f)
+                                        color(Color.WHITE)
+                                    }
+                                }
+                            }
+                            // 图片计数
+                            Text {
+                                attr {
+                                    text(preview.counterText)
+                                    fontSize(16f)
+                                    color(Color.WHITE)
+                                    fontWeightBold()
+                                }
+                            }
+                            // 选中按钮
+                            vif({ preview.showSelect }) {
+                                // 读取 selectVersion 以订阅选中状态变化
+                                val ver = preview.selectVersion
+                                View {
+                                    attr {
+                                        width(28f)
+                                        height(28f)
+                                        borderRadius(14f)
+                                        val isSelected = preview.selectedSet.contains(preview.imageId)
+                                        if (isSelected) {
+                                            backgroundColor(preview.themeColor)
+                                        } else {
+                                            backgroundColor(Color(0x66000000))
+                                            border(Border(1.5f, BorderStyle.SOLID, Color.WHITE))
+                                        }
+                                        alignItemsCenter()
+                                        justifyContentCenter()
+                                    }
+                                    event {
+                                        click { preview.toggleSelect() }
+                                    }
+                                    // 选中编号
+                                    vif({ preview.selectedSet.contains(preview.imageId) }) {
+                                        Text {
+                                            attr {
+                                                val num = preview.selectedList.indexOf(preview.imageId) + 1
+                                                text(if (num > 0) "$num" else "")
+                                                fontSize(12f)
+                                                color(Color.WHITE)
+                                                fontWeightBold()
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // ─── 图片展示区域 ───
                         View {
                             attr {
                                 flex(1f)
@@ -114,9 +249,7 @@ class KRAlbumPreview(private val pager: IPager) {
                                 alignItemsCenter()
                             }
                             event {
-                                click {
-                                    preview.close()
-                                }
+                                click { preview.close() }
                             }
                             Image {
                                 attr {
@@ -125,41 +258,100 @@ class KRAlbumPreview(private val pager: IPager) {
                                     resizeContain()
                                 }
                                 event {
-                                    loadSuccess {
-                                        preview.opening = false
-                                    }
-                                    loadFailure {
-                                        preview.opening = false
-                                    }
-                                    click {
-                                        preview.close()
-                                    }
+                                    loadSuccess { preview.opening = false }
+                                    loadFailure { preview.opening = false }
+                                    click { preview.close() }
                                 }
                             }
                         }
 
-                        vif({ preview.showSelect }) {
+                        // ─── 左侧切换区域 ───
+                        vif({ preview.currentIndex > 0 }) {
                             View {
                                 attr {
                                     positionAbsolute()
-                                    top(statusBarHeight + 10f)
-                                    right(16f)
-                                    width(24f)
-                                    height(24f)
-                                    borderRadius(12f)
-                                    val isSelected = preview.selectedIds.contains(preview.imageId)
-                                    if (isSelected) {
-                                        backgroundColor(preview.themeColor)
-                                    } else {
-                                        backgroundColor(Color(0x66000000))
-                                        border(Border(1.5f, BorderStyle.SOLID, Color.WHITE))
-                                    }
-                                    alignItemsCenter()
-                                    justifyContentCenter()
+                                    top(statusBarHeight + 56f)
+                                    left(0f)
+                                    width(screenWidth * 0.25f)
+                                    bottom(60f)
                                 }
                                 event {
-                                    click {
-                                        preview.toggleSelect()
+                                    click { preview.showPrevious() }
+                                }
+                            }
+                        }
+
+                        // ─── 右侧切换区域 ───
+                        vif({ preview.currentIndex < preview.imageList.size - 1 }) {
+                            View {
+                                attr {
+                                    positionAbsolute()
+                                    top(statusBarHeight + 56f)
+                                    right(0f)
+                                    width(screenWidth * 0.25f)
+                                    bottom(60f)
+                                }
+                                event {
+                                    click { preview.showNext() }
+                                }
+                            }
+                        }
+
+                        // ─── 底部导航提示 ───
+                        View {
+                            attr {
+                                positionAbsolute()
+                                bottom(0f)
+                                left(0f)
+                                right(0f)
+                                height(60f)
+                                flexDirectionRow()
+                                alignItemsCenter()
+                                justifyContentCenter()
+                            }
+                            vif({ preview.currentIndex > 0 }) {
+                                View {
+                                    attr {
+                                        width(40f)
+                                        height(40f)
+                                        borderRadius(20f)
+                                        backgroundColor(Color(0x66000000))
+                                        alignItemsCenter()
+                                        justifyContentCenter()
+                                        marginRight(24f)
+                                    }
+                                    event {
+                                        click { preview.showPrevious() }
+                                    }
+                                    Text {
+                                        attr {
+                                            text("‹")
+                                            fontSize(24f)
+                                            color(Color.WHITE)
+                                        }
+                                    }
+                                }
+                            }
+                            vif({ preview.currentIndex < preview.imageList.size - 1 }) {
+                                View {
+                                    attr {
+                                        width(40f)
+                                        height(40f)
+                                        borderRadius(20f)
+                                        backgroundColor(Color(0x66000000))
+                                        alignItemsCenter()
+                                        justifyContentCenter()
+                                        marginLeft(24f)
+                                    }
+                                    event {
+                                        click { preview.showNext() }
+                                    }
+                                    Text {
+                                        attr {
+                                            text("›")
+                                            fontSize(24f)
+                                            color(Color.WHITE)
+                                        }
                                     }
                                 }
                             }
@@ -171,14 +363,15 @@ class KRAlbumPreview(private val pager: IPager) {
     }
 
     private fun toggleSelect() {
-        val current = selectedIds.toMutableSet()
-        if (current.contains(imageId)) {
-            current.remove(imageId)
+        if (selectedSet.contains(imageId)) {
+            selectedSet.remove(imageId)
+            selectedList.remove(imageId)
         } else {
-            if (current.size >= maxSelectCount) return
-            current.add(imageId)
+            if (selectedList.size >= maxSelectCount) return
+            selectedSet.add(imageId)
+            selectedList.add(imageId)
         }
-        selectedIds = current
-        onSelectionChanged?.invoke(selectedIds)
+        selectVersion++ // 触发 UI 更新
+        onSelectionChanged?.invoke(selectedSet)
     }
 }
