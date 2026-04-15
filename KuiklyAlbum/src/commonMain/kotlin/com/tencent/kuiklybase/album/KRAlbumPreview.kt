@@ -5,6 +5,7 @@ import com.tencent.kuikly.core.base.Border
 import com.tencent.kuikly.core.base.BorderStyle
 import com.tencent.kuikly.core.base.Color
 import com.tencent.kuikly.core.base.Scale
+import com.tencent.kuikly.core.base.Translate
 import com.tencent.kuikly.core.base.ViewBuilder
 import com.tencent.kuikly.core.base.ViewRef
 import com.tencent.kuikly.core.directives.vif
@@ -34,6 +35,22 @@ class KRAlbumPreview(private val pager: IPager) {
     private var showSelect = true
     private lateinit var containerRef: ViewRef<DivView>
 
+    // ─── 图片手势状态 ───
+    /** 图片累计宽度（pinch end 时固化） */
+    private var imageWidth by observable(0f)
+    /** 图片累计高度（pinch end 时固化） */
+    private var imageHeight by observable(0f)
+    /** 当次 pinch 手势的实时缩放倍数（手势结束后归 1） */
+    private var pinchScale by observable(1f)
+    /** 图片位移偏移量（像素） */
+    private var translateX by observable(0f)
+    private var translateY by observable(0f)
+    /** pan 手势基准点 */
+    private var panStartX = 0f
+    private var panStartY = 0f
+    private var baseTranslateX = 0f
+    private var baseTranslateY = 0f
+
     fun open(
         imageUrl: String,
         imageId: String,
@@ -54,6 +71,12 @@ class KRAlbumPreview(private val pager: IPager) {
         this.themeColor = themeColor
         this.showSelect = showSelect
         this.onSelectionChanged = onSelectionChanged
+        // 重置手势状态，使用屏幕尺寸作为初始图片尺寸
+        imageWidth = pager.pageData.pageViewWidth
+        imageHeight = pager.pageData.pageViewHeight
+        pinchScale = 1f
+        translateX = 0f
+        translateY = 0f
         visible = true
     }
 
@@ -206,22 +229,61 @@ class KRAlbumPreview(private val pager: IPager) {
                             } // 内容层
                         }
 
-                        // ─── 图片展示区域 ───
+                        // ─── 图片展示区域（支持拖拽 + 双指缩放） ───
                         View {
                             attr {
-                                flex(1f)
-                                justifyContentCenter()
-                                alignItemsCenter()
+                                absolutePositionAllZero()
+                                allCenter()
                             }
+
                             Image {
                                 attr {
-                                    size(screenWidth, screenHeight)
+                                    // 实时尺寸 = 累计尺寸 × 当次 pinch 倍数
+                                    val w = preview.pinchScale * preview.imageWidth
+                                    val h = preview.pinchScale * preview.imageHeight
+                                    size(w, h)
                                     src(preview.imageUrl)
-                                    resizeContain()
+                                    // 拖拽位移（Translate 参数是相对组件宽高的百分比）
+                                    val tx = preview.translateX
+                                    val ty = preview.translateY
+                                    if (tx != 0f || ty != 0f) {
+                                        transform(
+                                            translate = Translate(tx / w, ty / h)
+                                        )
+                                    }
                                 }
                                 event {
                                     loadSuccess { preview.opening = false }
                                     loadFailure { preview.opening = false }
+                                    // 双指缩放（与官方 PinchGestureExampleDemo 一致）
+                                    pinch {
+                                        if (it.state != "end") {
+                                            preview.pinchScale = it.scale
+                                        } else {
+                                            preview.imageWidth *= it.scale
+                                            preview.imageHeight *= it.scale
+                                            preview.pinchScale = 1f
+                                        }
+                                    }
+                                    // 拖拽移动
+                                    pan {
+                                        when (it.state) {
+                                            "start" -> {
+                                                preview.panStartX = it.pageX
+                                                preview.panStartY = it.pageY
+                                                preview.baseTranslateX = preview.translateX
+                                                preview.baseTranslateY = preview.translateY
+                                            }
+                                            "move" -> {
+                                                preview.translateX = preview.baseTranslateX + (it.pageX - preview.panStartX)
+                                                preview.translateY = preview.baseTranslateY + (it.pageY - preview.panStartY)
+                                            }
+                                        }
+                                    }
+                                    // 双击复位
+                                    doubleClick {
+                                        preview.resetImageTransform()
+                                    }
                                 }
                             }
                         }
@@ -230,6 +292,14 @@ class KRAlbumPreview(private val pager: IPager) {
                 }
             }
         }
+    }
+
+    private fun resetImageTransform() {
+        imageWidth = pager.pageData.pageViewWidth
+        imageHeight = pager.pageData.pageViewHeight
+        pinchScale = 1f
+        translateX = 0f
+        translateY = 0f
     }
 
     private fun toggleSelect() {

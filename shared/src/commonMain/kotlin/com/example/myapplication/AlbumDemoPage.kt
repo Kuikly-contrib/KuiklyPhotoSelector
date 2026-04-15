@@ -7,6 +7,7 @@ import com.tencent.kuikly.core.base.ViewBuilder
 import com.tencent.kuikly.core.module.Module
 import com.tencent.kuikly.core.reactive.handler.observable
 import com.tencent.kuikly.core.views.*
+import com.tencent.kuiklybase.album.KRAlbumImage
 import com.tencent.kuiklybase.album.KRAlbumModule
 import com.tencent.kuiklybase.album.KuiklyAlbum
 
@@ -16,6 +17,7 @@ internal class AlbumDemoPage : BasePager() {
     private var selectedCount by observable(0)
     private var hasVideo by observable(false)
     private var hasPhoto by observable(false)
+    private var selectedImages = listOf<KRAlbumImage>()
 
     override fun createExternalModules(): Map<String, Module>? {
         val modules = super.createExternalModules()?.toMutableMap() ?: hashMapOf()
@@ -58,18 +60,30 @@ internal class AlbumDemoPage : BasePager() {
                         color(Color.BLACK)
                     }
                 }
-                Text {
-                    attr {
-                        val count = ctx.selectedCount
-                        val label = when {
-                            count == 0 -> "完成"
-                            ctx.hasVideo && ctx.hasPhoto -> "完成($count/9 项)"
-                            ctx.hasVideo -> "完成($count/9 视频)"
-                            else -> "完成($count/9 照片)"
+                View {
+                    event {
+                        click {
+                            if (ctx.selectedCount > 0) {
+                                println("Confirmed ${ctx.selectedImages.size} images")
+                                for (img in ctx.selectedImages) {
+                                    println("  - ${img.id}: ${img.uri}")
+                                }
+                            }
                         }
-                        text(label)
-                        fontSize(15f)
-                        color(if (count > 0) Color(0xFF07C160) else Color(0xFF999999))
+                    }
+                    Text {
+                        attr {
+                            val count = ctx.selectedCount
+                            val label = when {
+                                count == 0 -> "完成"
+                                ctx.hasVideo && ctx.hasPhoto -> "完成($count/9 项)"
+                                ctx.hasVideo -> "完成($count/9 视频)"
+                                else -> "完成($count/9 照片)"
+                            }
+                            text(label)
+                            fontSize(15f)
+                            color(if (count > 0) Color(0xFF07C160) else Color(0xFF999999))
+                        }
                     }
                 }
             }
@@ -86,6 +100,7 @@ internal class AlbumDemoPage : BasePager() {
                 }
                 event {
                     onSelectionChanged { images ->
+                        ctx.selectedImages = images
                         ctx.selectedCount = images.size
                         var foundVideo = false
                         var foundPhoto = false
