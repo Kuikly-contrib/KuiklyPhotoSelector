@@ -78,7 +78,7 @@ internal class AlbumDemoPage : BasePager() {
             KuiklyAlbum {
                 attr {
                     maxSelectCount(9)
-                    columnCount(3)
+                    columnCount(4)
                     itemSpacing(3f)
                     themeColor(Color(0xFF07C160))
                     showVideoLabel(true)

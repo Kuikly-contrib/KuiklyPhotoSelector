@@ -439,9 +439,10 @@ class KuiklyAlbumView : ComposeView<KuiklyAlbumAttr, KuiklyAlbumEvent>() {
     }
 
     private fun openPreview(index: Int) {
+        val image = _images.getOrNull(index) ?: return
         preview.open(
-            images = _images,
-            index = index,
+            imageUrl = image.uri,
+            imageId = image.id,
             selectedIds = _selectedSet,
             maxSelectCount = attr.maxSelectCount,
             themeColor = attr.themeColor,
