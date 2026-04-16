@@ -1,6 +1,6 @@
 {
   "name": "@yuki8273/kuikly-album",
-  "version": "1.0.0",
+  "version": "0.0.1",
   "description": "KuiklyAlbum HarmonyOS Native Module",
   "main": "Index.ets",
   "author": "Kuikly Team",

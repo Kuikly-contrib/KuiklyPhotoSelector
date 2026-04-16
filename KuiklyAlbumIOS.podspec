@@ -1,8 +1,8 @@
 Pod::Spec.new do |spec|
   spec.name                     = 'KuiklyAlbumIOS'
   spec.version                  = '1.0.0'
-  spec.homepage                 = 'https://github.com/Kuikly-contrib/KuiklyAlbum'
-  spec.source                   = { :git => 'https://github.com/Kuikly-contrib/KuiklyAlbum.git', :branch => 'main' }
+  spec.homepage                 = 'https://github.com/Kuikly-contrib/KuiklyPhotoSelector'
+  spec.source                   = { :git => 'https://github.com/Kuikly-contrib/KuiklyPhotoSelector.git', :branch => 'main' }
   spec.authors                  = 'Kuikly Team'
   spec.license                  = { :type => 'MIT', :file => 'LICENSE' }
   spec.summary                  = 'KuiklyAlbum iOS Native Module'
