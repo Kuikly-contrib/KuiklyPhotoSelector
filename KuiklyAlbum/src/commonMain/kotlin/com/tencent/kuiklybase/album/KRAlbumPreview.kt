@@ -242,6 +242,7 @@ class KRAlbumPreview(private val pager: IPager) {
                                     val w = preview.pinchScale * preview.imageWidth
                                     val h = preview.pinchScale * preview.imageHeight
                                     size(w, h)
+                                    resizeContain() // 等比缩放，完整显示图片
                                     src(preview.imageUrl)
                                     // 拖拽位移（Translate 参数是相对组件宽高的百分比）
                                     val tx = preview.translateX
