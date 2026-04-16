@@ -1,9 +1,12 @@
 # KuiklyAlbum
 
-[![GitHub](https://img.shields.io/badge/GitHub-KuiklyAlbum-blue?logo=github)](https://github.com/Kuikly-contrib/KuiklyAlbum)
+[![GitHub](https://img.shields.io/badge/GitHub-KuiklyPhotoSelector-blue?logo=github)](https://github.com/Kuikly-contrib/KuiklyAlbum)
 
 Kuikly 跨端相册组件，提供 Android / iOS / 鸿蒙三端统一的相册图片选取和预览能力。
 
+## 效果演示
+
+![Demo](screenshots/demo.png)
 
 ## 依赖引入
 
