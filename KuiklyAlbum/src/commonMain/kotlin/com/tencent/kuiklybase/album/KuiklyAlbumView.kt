@@ -47,14 +47,11 @@ class KuiklyAlbumEvent : ComposeEvent() {
 /**
  * 相册选择器核心组件
  *
- * 架构：元数据全量 + 可见性驱动图片懒加载
+ * 架构：快速元数据 + 内容 URI 直接加载
  *
- * 1. 元数据（路径/ID/尺寸）全量同步分组 → rowList
- * 2. Scroller + vforIndex 全量创建虚拟节点（轻量，每行几百字节）
- * 3. 图片 src 由可见性版本号 (visibleVersion) 驱动：
- *    - willAppear：行进入可见区 → 加入 _visibleRows → visibleVersion++ → attr 读取时设置 src
- *    - didDisappear：行离开可见区 → 移出 _visibleRows → visibleVersion++ → attr 读取时清空 src
- * 4. 不可见的行只有浅灰占位，不触发图片解码，内存可控
+ * 1. fetchMetadata() 快速返回 ID/URI/尺寸 → 立刻显示灰色占位网格
+ * 2. Image src 直接使用 content URI → Image 组件异步加载，灰色占位自然过渡为图片
+ * 3. 二次打开走 ImageCache → 秒开
  */
 class KuiklyAlbumView : ComposeView<KuiklyAlbumAttr, KuiklyAlbumEvent>() {
 
@@ -68,6 +65,10 @@ class KuiklyAlbumView : ComposeView<KuiklyAlbumAttr, KuiklyAlbumEvent>() {
     /** 当前加载图片的行范围 [loadStartRow, loadEndRow) */
     private var loadStartRow by observable(0)
     private var loadEndRow by observable(Int.MAX_VALUE)
+
+    /** 数据版本号，_images/_rowList 变更时递增，驱动网格区域重建 */
+    var dataVersion by observable(0)
+        private set
 
     var selectionVersion by observable(0)
         private set
@@ -179,6 +180,8 @@ class KuiklyAlbumView : ComposeView<KuiklyAlbumAttr, KuiklyAlbumEvent>() {
 
             // ─── 图片网格 ───
             vif({ !ctx.loading && !ctx.permissionDenied && ctx._images.isNotEmpty() }) {
+                // 读取 dataVersion 建立响应式依赖，数据更新时网格重建
+                @Suppress("UNUSED_VARIABLE") val dv = ctx.dataVersion
                 val a = ctx.attr
                 val cols = a.columnCount
                 val spacing = a.itemSpacing
@@ -256,7 +259,8 @@ class KuiklyAlbumView : ComposeView<KuiklyAlbumAttr, KuiklyAlbumEvent>() {
                     backgroundColor(Color(0xFFE5E5E5))
                 }
 
-                // 缩略图：只有行可见时才设置 src，不可见时清空
+                // 缩略图：行可见时直接设置 content URI，Image 组件异步加载
+                // 灰色占位由父 View 的 backgroundColor 自然呈现
                 Image {
                     attr {
                         positionAbsolute()
@@ -265,8 +269,8 @@ class KuiklyAlbumView : ComposeView<KuiklyAlbumAttr, KuiklyAlbumEvent>() {
                         right(0f)
                         bottom(0f)
                         // 读取 loadStartRow/loadEndRow 建立响应式依赖
-                        val s = ctx.loadStartRow
-                        val e = ctx.loadEndRow
+                        @Suppress("UNUSED_VARIABLE") val s = ctx.loadStartRow
+                        @Suppress("UNUSED_VARIABLE") val e = ctx.loadEndRow
                         if (ctx.isRowLoaded(rowIndex)) {
                             src(image.displayUri())
                         } else {
@@ -287,7 +291,7 @@ class KuiklyAlbumView : ComposeView<KuiklyAlbumAttr, KuiklyAlbumEvent>() {
                         left(0f)
                         right(0f)
                         bottom(0f)
-                        val ver = ctx.selectionVersion
+                        @Suppress("UNUSED_VARIABLE") val ver = ctx.selectionVersion
                         if (ctx._selectedSet.contains(image.id)) {
                             backgroundColor(Color(0x33000000))
                         } else {
@@ -339,7 +343,7 @@ class KuiklyAlbumView : ComposeView<KuiklyAlbumAttr, KuiklyAlbumEvent>() {
                         width(28f)
                         height(28f)
                         borderRadius(14f)
-                        val ver = ctx.selectionVersion
+                        @Suppress("UNUSED_VARIABLE") val ver = ctx.selectionVersion
                         if (ctx._selectedSet.contains(image.id)) {
                             backgroundColor(ctx.attr.themeColor)
                         } else {
@@ -354,7 +358,7 @@ class KuiklyAlbumView : ComposeView<KuiklyAlbumAttr, KuiklyAlbumEvent>() {
                     }
                     Text {
                         attr {
-                            val ver = ctx.selectionVersion
+                            @Suppress("UNUSED_VARIABLE") val ver = ctx.selectionVersion
                             val selectNum = ctx.getSelectIndex(image.id)
                             if (ctx._selectedSet.contains(image.id) && selectNum > 0) {
                                 text("$selectNum")
@@ -378,13 +382,20 @@ class KuiklyAlbumView : ComposeView<KuiklyAlbumAttr, KuiklyAlbumEvent>() {
             if (module.isPermissionGranted(result)) {
                 val cached = KRAlbumModule.ImageCache.get()
                 if (cached != null) {
+                    // ★ 缓存命中：二次打开，秒开
                     setImages(cached)
                     loading = false
                 } else {
-                    module.fetchImageList { list ->
-                        KRAlbumModule.ImageCache.put(list)
-                        setImages(list)
+                    // ★ 两步加载 Step 1：只加载首屏（60 张），快速显示网格
+                    val firstScreenCount = attr.columnCount * 8  // 3列×8行 = 24 张
+                    module.fetchMetadataList(firstScreenCount) { firstPage ->
+                        setImages(firstPage)
                         loading = false
+                        // ★ 两步加载 Step 2：后台加载全量数据并更新缓存
+                        module.fetchImageList { fullList ->
+                            KRAlbumModule.ImageCache.put(fullList)
+                            setImages(fullList)
+                        }
                     }
                 }
             } else {
@@ -410,6 +421,7 @@ class KuiklyAlbumView : ComposeView<KuiklyAlbumAttr, KuiklyAlbumEvent>() {
             _rowList.add(KRAlbumRow(items = _images.subList(i, end).toList(), startIndex = i))
             i += cols
         }
+        dataVersion++  // 触发 UI 重建
     }
 
     fun getSelectedImages(): List<KRAlbumImage> {

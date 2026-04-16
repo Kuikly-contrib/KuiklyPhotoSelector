@@ -42,6 +42,15 @@ export class KRAlbumModule extends KuiklyRenderBaseModule {
       case 'fetchImagesFromAlbum':
         this.fetchImagesFromAlbum(params as string, callback);
         return null;
+      case 'fetchMetadata':
+        this.fetchMetadata(params as string, callback);
+        return null;
+      case 'requestThumbnail':
+        this.requestThumbnail(params as string, callback);
+        return null;
+      case 'cancelThumbnailRequest':
+        this.cancelThumbnailRequest(params as string);
+        return null;
       default:
         return null;
     }
@@ -244,5 +253,105 @@ export class KRAlbumModule extends KuiklyRenderBaseModule {
       console.error(`KRAlbumModule fetchImagesFromAlbum error: ${err.message}`);
       callback?.(JSON.stringify({ data: [] }));
     }
+  }
+
+  // ─── 两步加载：元数据与缩略图分离 ───
+
+  /**
+   * 第一步：只获取元数据（ID/URI/尺寸），thumbnailUri 为空字符串
+   * 返回后立刻可渲染灰色占位网格
+   */
+  private async fetchMetadata(paramsStr: string | null, callback: KuiklyRenderCallback | null): Promise<void> {
+    let maxCount = Number.MAX_SAFE_INTEGER;
+    if (paramsStr) {
+      try {
+        const p = JSON.parse(paramsStr) as Record<string, number>;
+        maxCount = p['maxCount'] ?? Number.MAX_SAFE_INTEGER;
+      } catch (_) {}
+    }
+    try {
+      const context = getContext(this) as common.UIAbilityContext;
+      const helper = photoAccessHelper.getPhotoAccessHelper(context);
+      const predicates = new dataSharePredicates.DataSharePredicates();
+      const fetchOptions: photoAccessHelper.FetchOptions = {
+        fetchColumns: ['uri', 'display_name', 'width', 'height', 'media_type', 'size', 'date_added'],
+        predicates: predicates
+      };
+      const fetchResult = await helper.getAssets(fetchOptions);
+      const images: AlbumImageInfo[] = [];
+      let count = 0;
+      if (fetchResult.getCount() > 0) {
+        let asset = await fetchResult.getFirstObject();
+        while (asset && count < maxCount) {
+          const info = new AlbumImageInfo();
+          info.id = asset.uri;
+          info.uri = asset.uri;
+          info.thumbnailUri = asset.uri;  // 直接使用 URI，Image 组件可异步加载
+          info.width = asset.get('width') as number ?? 0;
+          info.height = asset.get('height') as number ?? 0;
+          images.push(info);
+          count++;
+          try {
+            asset = await fetchResult.getNextObject();
+          } catch (_) {
+            break;
+          }
+        }
+      }
+      fetchResult.close();
+      callback?.(JSON.stringify({ data: images }));
+    } catch (error) {
+      const err = error as BusinessError;
+      console.error(`KRAlbumModule fetchMetadata error: ${err.code} ${err.message}`);
+      callback?.(JSON.stringify({ data: [] }));
+    }
+  }
+
+  /**
+   * 第二步：按需请求单张缩略图
+   * 缩略图就绪后通过 callback 返回 thumbnailUri
+   */
+  private async requestThumbnail(paramsStr: string | null, callback: KuiklyRenderCallback | null): Promise<void> {
+    if (!paramsStr || !callback) return;
+    let imageId = '';
+    try {
+      const p = JSON.parse(paramsStr) as Record<string, string>;
+      imageId = p['imageId'] ?? '';
+    } catch (_) {}
+
+    if (!imageId) {
+      callback(JSON.stringify({ imageId: '', thumbnailUri: '' }));
+      return;
+    }
+
+    try {
+      const context = getContext(this) as common.UIAbilityContext;
+      const helper = photoAccessHelper.getPhotoAccessHelper(context);
+      const predicates = new dataSharePredicates.DataSharePredicates();
+      predicates.equalTo('uri', imageId);
+      const fetchOptions: photoAccessHelper.FetchOptions = {
+        fetchColumns: ['uri'],
+        predicates: predicates
+      };
+      const fetchResult = await helper.getAssets(fetchOptions);
+      let thumbnailUri = '';
+      if (fetchResult.getCount() > 0) {
+        const asset = await fetchResult.getFirstObject();
+        thumbnailUri = asset.uri;
+      }
+      fetchResult.close();
+      callback(JSON.stringify({ imageId: imageId, thumbnailUri: thumbnailUri }));
+    } catch (error) {
+      const err = error as BusinessError;
+      console.error(`KRAlbumModule requestThumbnail error: ${err.message}`);
+      callback(JSON.stringify({ imageId: imageId, thumbnailUri: '' }));
+    }
+  }
+
+  /**
+   * 取消缩略图请求（预留）
+   */
+  private cancelThumbnailRequest(paramsStr: string | null): void {
+    // 预留：后续可实现优先级队列取消逻辑
   }
 }

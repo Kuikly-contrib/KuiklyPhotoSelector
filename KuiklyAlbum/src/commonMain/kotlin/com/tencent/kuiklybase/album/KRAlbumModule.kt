@@ -51,6 +51,43 @@ class KRAlbumModule : Module() {
         callNative(METHOD_FETCH_ALBUMS, null, callback)
     }
 
+    // ─── 两步加载：元数据与缩略图分离 ───
+
+    /**
+     * 第一步：只获取元数据（路径/ID/尺寸），不解码任何图片
+     * 对标 Telegram MediaController.loadGalleryPhotosAlbums()
+     * 耗时 200~500ms，返回后立刻可渲染灰色占位网格
+     */
+    fun fetchMetadata(maxCount: Int = Int.MAX_VALUE, callback: CallbackFn) {
+        val params = JSONObject().apply {
+            put("maxCount", maxCount)
+        }
+        callNative(METHOD_FETCH_METADATA, params, callback)
+    }
+
+    /**
+     * 第二步：按需异步请求单张缩略图
+     * 对标 Telegram ImageLoader.loadImageForImageReceiver()
+     * 缩略图就绪后通过 callback 通知
+     */
+    fun requestThumbnail(imageId: String, priority: Int = 1, callback: CallbackFn) {
+        val params = JSONObject().apply {
+            put("imageId", imageId)
+            put("priority", priority)
+        }
+        callNative(METHOD_REQUEST_THUMBNAIL, params, callback)
+    }
+
+    /**
+     * 取消缩略图请求（Cell 滑出屏幕时调用）
+     */
+    fun cancelThumbnailRequest(imageId: String) {
+        val params = JSONObject().apply {
+            put("imageId", imageId)
+        }
+        callNative(METHOD_CANCEL_THUMBNAIL, params, null)
+    }
+
     // ─── 高级封装（带类型解析） ───
 
     fun fetchImageList(maxCount: Int = Int.MAX_VALUE, callback: (List<KRAlbumImage>) -> Unit) {
@@ -71,6 +108,16 @@ class KRAlbumModule : Module() {
         }
     }
 
+    /**
+     * 高级封装：只获取元数据（无缩略图 URI）
+     * 返回的 KRAlbumImage 中 thumbnailUri 为空，需后续通过 requestThumbnail 获取
+     */
+    fun fetchMetadataList(maxCount: Int = Int.MAX_VALUE, callback: (List<KRAlbumImage>) -> Unit) {
+        fetchMetadata(maxCount) { result ->
+            callback(parseImages(result))
+        }
+    }
+
     // ─── 内部方法 ───
 
     private fun callNative(method: String, data: JSONObject?, callback: CallbackFn?) {
@@ -88,6 +135,9 @@ class KRAlbumModule : Module() {
         const val METHOD_FETCH_IMAGES = "fetchImages"
         const val METHOD_FETCH_ALBUMS = "fetchAlbums"
         const val METHOD_FETCH_IMAGES_FROM_ALBUM = "fetchImagesFromAlbum"
+        const val METHOD_FETCH_METADATA = "fetchMetadata"
+        const val METHOD_REQUEST_THUMBNAIL = "requestThumbnail"
+        const val METHOD_CANCEL_THUMBNAIL = "cancelThumbnailRequest"
 
         fun parseImages(result: Any?): List<KRAlbumImage> {
             val list = mutableListOf<KRAlbumImage>()

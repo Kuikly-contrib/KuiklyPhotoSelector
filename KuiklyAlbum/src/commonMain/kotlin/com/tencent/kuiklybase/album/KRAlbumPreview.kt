@@ -36,10 +36,8 @@ class KRAlbumPreview(private val pager: IPager) {
     private lateinit var containerRef: ViewRef<DivView>
 
     // ─── 图片手势状态 ───
-    /** 图片累计宽度（pinch end 时固化） */
-    private var imageWidth by observable(0f)
-    /** 图片累计高度（pinch end 时固化） */
-    private var imageHeight by observable(0f)
+    /** 累计缩放倍数（pinch end 时固化） */
+    private var currentScale by observable(1f)
     /** 当次 pinch 手势的实时缩放倍数（手势结束后归 1） */
     private var pinchScale by observable(1f)
     /** 图片位移偏移量（像素） */
@@ -71,9 +69,8 @@ class KRAlbumPreview(private val pager: IPager) {
         this.themeColor = themeColor
         this.showSelect = showSelect
         this.onSelectionChanged = onSelectionChanged
-        // 重置手势状态，使用屏幕尺寸作为初始图片尺寸
-        imageWidth = pager.pageData.pageViewWidth
-        imageHeight = pager.pageData.pageViewHeight
+        // 重置手势状态
+        currentScale = 1f
         pinchScale = 1f
         translateX = 0f
         translateY = 0f
@@ -136,6 +133,7 @@ class KRAlbumPreview(private val pager: IPager) {
                         attr {
                             absolutePosition(0f, 0f, 0f, 0f)
                             backgroundColor(Color.BLACK)
+                            overflow(true)
                             opacity(0f)
                             transform(scale = Scale(0.85f, 0.85f))
                         }
@@ -229,62 +227,74 @@ class KRAlbumPreview(private val pager: IPager) {
                             } // 内容层
                         }
 
-                        // ─── 图片展示区域（支持拖拽 + 双指缩放） ───
+                        // ─── 图片展示区域（支持拖拽 + 双指缩放 + 双击） ───
                         View {
                             attr {
                                 absolutePositionAllZero()
                                 allCenter()
+                                overflow(true)
                             }
-
-                            Image {
-                                attr {
-                                    // 实时尺寸 = 累计尺寸 × 当次 pinch 倍数
-                                    val w = preview.pinchScale * preview.imageWidth
-                                    val h = preview.pinchScale * preview.imageHeight
-                                    size(w, h)
-                                    resizeContain() // 等比缩放，完整显示图片
-                                    src(preview.imageUrl)
-                                    // 拖拽位移（Translate 参数是相对组件宽高的百分比）
-                                    val tx = preview.translateX
-                                    val ty = preview.translateY
-                                    if (tx != 0f || ty != 0f) {
-                                        transform(
-                                            translate = Translate(tx / w, ty / h)
-                                        )
-                                    }
-                                }
-                                event {
-                                    loadSuccess { preview.opening = false }
-                                    loadFailure { preview.opening = false }
-                                    // 双指缩放（与官方 PinchGestureExampleDemo 一致）
-                                    pinch {
-                                        if (it.state != "end") {
-                                            preview.pinchScale = it.scale
-                                        } else {
-                                            preview.imageWidth *= it.scale
-                                            preview.imageHeight *= it.scale
-                                            preview.pinchScale = 1f
+                            event {
+                                // 双指缩放
+                                pinch {
+                                    val s = preview.currentScale * it.scale
+                                    val clampedScale = s.coerceIn(0.5f, 5f)
+                                    if (it.state != "end") {
+                                        preview.pinchScale = clampedScale / preview.currentScale
+                                    } else {
+                                        preview.currentScale = clampedScale
+                                        preview.pinchScale = 1f
+                                        if (preview.currentScale < 1f) {
+                                            preview.resetImageTransform()
                                         }
                                     }
-                                    // 拖拽移动
-                                    pan {
-                                        when (it.state) {
-                                            "start" -> {
-                                                preview.panStartX = it.pageX
-                                                preview.panStartY = it.pageY
-                                                preview.baseTranslateX = preview.translateX
-                                                preview.baseTranslateY = preview.translateY
-                                            }
-                                            "move" -> {
+                                }
+                                // 拖拽移动（仅缩放 > 1 时生效）
+                                pan {
+                                    when (it.state) {
+                                        "start" -> {
+                                            preview.panStartX = it.pageX
+                                            preview.panStartY = it.pageY
+                                            preview.baseTranslateX = preview.translateX
+                                            preview.baseTranslateY = preview.translateY
+                                        }
+                                        "move" -> {
+                                            if (preview.currentScale > 1f) {
                                                 preview.translateX = preview.baseTranslateX + (it.pageX - preview.panStartX)
                                                 preview.translateY = preview.baseTranslateY + (it.pageY - preview.panStartY)
                                             }
                                         }
                                     }
-                                    // 双击复位
-                                    doubleClick {
+                                }
+                                // 双击放大
+                                doubleClick {
+                                    if (preview.currentScale > 1f) {
                                         preview.resetImageTransform()
+                                    } else {
+                                        preview.currentScale = 1.8f
                                     }
+                                }
+                            }
+
+                            Image {
+                                attr {
+                                    size(screenWidth, screenHeight)
+                                    resizeContain()
+                                    src(preview.imageUrl)
+                                    val s = preview.currentScale * preview.pinchScale
+                                    val tx = preview.translateX
+                                    val ty = preview.translateY
+                                    transform(
+                                        scale = Scale(s, s),
+                                        translate = Translate(
+                                            tx / screenWidth,
+                                            ty / screenHeight
+                                        )
+                                    )
+                                }
+                                event {
+                                    loadSuccess { preview.opening = false }
+                                    loadFailure { preview.opening = false }
                                 }
                             }
                         }
@@ -296,8 +306,7 @@ class KRAlbumPreview(private val pager: IPager) {
     }
 
     private fun resetImageTransform() {
-        imageWidth = pager.pageData.pageViewWidth
-        imageHeight = pager.pageData.pageViewHeight
+        currentScale = 1f
         pinchScale = 1f
         translateX = 0f
         translateY = 0f

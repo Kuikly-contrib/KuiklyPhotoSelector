@@ -23,6 +23,9 @@ class KRAlbumModule : KuiklyRenderBaseModule() {
             "fetchImages" -> { fetchImages(params, callback); null }
             "fetchAlbums" -> { fetchAlbums(callback); null }
             "fetchImagesFromAlbum" -> { fetchImagesFromAlbum(params, callback); null }
+            "fetchMetadata" -> { fetchMetadata(params, callback); null }
+            "requestThumbnail" -> { requestThumbnail(params, callback); null }
+            "cancelThumbnailRequest" -> { cancelThumbnailRequest(params); null }
             else -> null
         }
     }
@@ -165,6 +168,109 @@ class KRAlbumModule : KuiklyRenderBaseModule() {
             }
         }
         return images
+    }
+
+    // ─── 两步加载：元数据与缩略图分离 ───
+
+    /**
+     * 第一步：快速查询元数据，返回可用的 thumbnailUri
+     * - 只查 _ID/DATE_ADDED 两个必须字段（WIDTH/HEIGHT 很多设备为 0，省略可加速）
+     * - thumbnailUri 直接设为 contentUri（Image 组件可直接加载）
+     * - 支持 maxCount 限制，首次只加载首屏（如 60 张），快速返回
+     */
+    private fun fetchMetadata(params: String?, callback: KuiklyRenderCallback?) {
+        val maxCount = params?.let {
+            try { JSONObject(it).optInt("maxCount", Int.MAX_VALUE) } catch (_: Exception) { Int.MAX_VALUE }
+        } ?: Int.MAX_VALUE
+        Thread {
+            val images = queryImagesFast(null, maxCount)
+            Handler(Looper.getMainLooper()).post {
+                callback?.invoke(JSONObject().put("data", images).toString())
+            }
+        }.start()
+    }
+
+    /**
+     * 高性能查询：只查 _ID，用 ContentUris 构造 URI
+     * 比 queryImages 少查 DATA/WIDTH/HEIGHT/DATE_ADDED，JSON 序列化更快
+     */
+    private fun queryImagesFast(bucketId: String?, maxCount: Int): JSONArray {
+        val ctx = context ?: return JSONArray()
+        val images = JSONArray()
+        val projection = arrayOf(MediaStore.Images.Media._ID)
+        val selection = bucketId?.let { "${MediaStore.Images.Media.BUCKET_ID} = ?" }
+        val selectionArgs = bucketId?.let { arrayOf(it) }
+        val cursor = ctx.contentResolver.query(
+            MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+            projection, selection, selectionArgs,
+            "${MediaStore.Images.Media.DATE_ADDED} DESC"
+        )
+        cursor?.use {
+            var count = 0
+            while (it.moveToNext() && count < maxCount) {
+                val id = it.getLong(it.getColumnIndexOrThrow(MediaStore.Images.Media._ID))
+                val contentUri = ContentUris.withAppendedId(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, id).toString()
+                images.put(JSONObject().apply {
+                    put("id", id.toString())
+                    put("uri", contentUri)
+                    put("thumbnailUri", contentUri)
+                })
+                count++
+            }
+        }
+        return images
+    }
+
+    /**
+     * 第二步：按需请求单张缩略图
+     * 缩略图就绪后通过 callback 返回 thumbnailUri
+     * Android 上 content:// URI 本身即可被 Kuikly Image 组件加载，
+     * 所以这里直接返回 content URI 作为缩略图 URI
+     */
+    private fun requestThumbnail(params: String?, callback: KuiklyRenderCallback?) {
+        if (params == null || callback == null) return
+        val json = try { JSONObject(params) } catch (_: Exception) { return }
+        val imageId = json.optString("imageId", "") ?: return
+        if (imageId.isEmpty()) return
+
+        Thread {
+            // 根据 imageId 查询 content URI
+            val ctx = context
+            if (ctx == null) {
+                Handler(Looper.getMainLooper()).post {
+                    callback.invoke(JSONObject().put("imageId", imageId).put("thumbnailUri", "").toString())
+                }
+                return@Thread
+            }
+            val projection = arrayOf(MediaStore.Images.Media._ID)
+            val selection = "${MediaStore.Images.Media._ID} = ?"
+            val selectionArgs = arrayOf(imageId)
+            val cursor = ctx.contentResolver.query(
+                MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                projection, selection, selectionArgs, null
+            )
+            var thumbnailUri = ""
+            cursor?.use {
+                if (it.moveToFirst()) {
+                    val id = it.getLong(it.getColumnIndexOrThrow(MediaStore.Images.Media._ID))
+                    thumbnailUri = ContentUris.withAppendedId(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, id).toString()
+                }
+            }
+            val result = JSONObject().apply {
+                put("imageId", imageId)
+                put("thumbnailUri", thumbnailUri)
+            }
+            Handler(Looper.getMainLooper()).post {
+                callback.invoke(result.toString())
+            }
+        }.start()
+    }
+
+    /**
+     * 取消缩略图请求（当前简化实现，后续可扩展任务队列取消）
+     */
+    private fun cancelThumbnailRequest(params: String?) {
+        // 预留：后续可实现优先级队列取消逻辑
     }
 
     companion object {
